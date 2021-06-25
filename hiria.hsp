@@ -1,0 +1,443 @@
+// 非リアが手を握るのはだめですか
+// (C) YotioSoft 2019
+
+#uselib "user32.dll"
+	#func DrawText "DrawTextW" int,wstr,int,int,int
+		
+#module
+/*文字を中央に表示（使用例：cmes "hogehoge", 0, 640, 0, 480, 0）*/
+#deffunc cmes str ctext, int cx, int cy, int cx2, int cy2, int redraw_exist
+	RECT = cx, cy, cx2, cy2
+	DrawText@ hdc, ctext, -1, varptr(RECT), $01
+	if redraw_exist = 0 : redraw 1
+	return
+
+/*半透明色表示命令（機能はboxfaと同じ）*/
+#deffunc sboxf int depth, int ax, int ay, int bx, int by
+	pdx = ax, bx, bx, ax
+	pdy = ay, ay, by, by
+	gmode 3,,,depth
+	gsquare -1,pdx, pdy
+	return
+#global
+
+*start
+	title "非リアが手を握るのはだめですか"
+	
+	celload "img/logo.png", 1
+	celload "img/hiria.png", 2
+	celload "img/ria.png", 3
+	celload "img/tree.png", 4
+	celload "img/hiria2.png", 5
+	celload "img/iwa.png", 6
+	celload "img/triangle.png", 7
+
+	mmload "bgm/hazimari.mp3", 1, 1
+	mmload "bgm/Rider_of_Starlit.mp3", 2, 1
+
+	randomize
+	
+// タイトル画面
+*title_menu
+	mmplay 1
+
+	cls
+	gmode 2
+
+	objsize 100, 20
+	pos ginfo(12)/2-50, ginfo(13)-100 : button "はじめる", *game
+	
+	repeat
+		redraw 0
+		color 63, 72, 204 : boxf 0, 0, ginfo(12), 200+141
+
+		i = cnt
+		repeat 10
+			pos cnt*70, 200 : gcopy 2, i\2*80, 0, 80, 141
+		loop
+
+		pos ginfo(12)-300, 30 : gcopy 1, 0, 0, 256, 270
+
+		redraw 1
+		wait 100
+	loop
+
+*game
+	clrobj
+	mmplay 2
+
+	font "Yu Gothic UI", 14
+	
+	hirias = 1
+	hiria_max = 5
+	dim hiria_pos_x, hiria_max 		: hiria_pos_x(0) = ginfo(12)/2-80/2
+	dim hiria_pos_y, hiria_max 		: hiria_pos_y(0) = ginfo(13)/2-150/2
+	dim hiria_status, hiria_max     : hiria_status(0) = 1						// 1 : プレイヤー, 2 : 仲間, -1 : 他人
+	dim hiria_connection, hiria_max	: hiria_connection(0) = 0					// 非リアの立ち位置（0 : 真ん中, -1～ : 上（左）, 1～ : 下（右））
+	next_hiria_id = 1
+	next_connection = 0
+	next_connection_r = 0
+	next_connection_l = 0
+
+	repeat hirias - 1
+		hiria_pos_x(cnt+1) = -2000
+		hiria_pos_y(cnt+1) = 0
+		hiria_status(cnt+1) = 0
+		hiria_connection(cnt+1) = 0
+	loop
+
+	dim tree_x, 2
+	tree_x(0) = -64
+	tree_x(1) = ginfo(12)/2-64
+
+	point = 0
+
+	obstacle_max = 5
+	dim obstacle_pos_x, obstacle_max
+	dim obstacle_pos_y, obstacle_max
+	obstacles = 0
+	next_obstacle_id = 0
+
+	repeat obstacle_max
+		obstacle_pos_x(cnt) = -1000
+		obstacle_pos_y(cnt) = -50
+	loop
+	
+	dim riaju_pos_x, 10
+	dim riaju_pos_y, 10
+	dim riaju_attacked, 10
+	next_riaju_id = 0
+	riajus = 0
+
+	game_over = 0
+	count_attack = 0
+	count_hiria = 0
+
+	gmode 2
+	repeat
+		redraw 0
+
+		// リア充発生イベント
+		if rnd(25) = 0 and (riaju_pos_x(next_riaju_id) <= 0 or riaju_pos_x(next_riaju_id) > ginfo(12)) {
+			riaju_attacked(next_riaju_id) = 0
+			riaju_pos_y(next_riaju_id) = rnd(ginfo(13)-70-150) + 70
+			riaju_pos_x(next_riaju_id) = -110
+
+			next_riaju_id ++
+
+			if next_riaju_id = 10 {
+				next_riaju_id = 0
+			}
+
+			if riajus < 10 {
+				riajus ++
+			}
+		}
+
+		// 非リア発生イベント
+		if rnd(150) = 0 and hirias < hiria_max {
+			if next_hiria_id > -1 {
+				hiria_pos_x(next_hiria_id) = -80
+				hiria_pos_y(next_hiria_id) = rnd(ginfo(13)-70-150) + 70
+				hiria_status(next_hiria_id) = -1
+				hirias ++
+				next_hiria_id ++
+			}
+		}
+		if hirias < hiria_max {
+			if next_hiria_id = hiria_max or next_hiria_id = -1 {
+				next_hiria_id = -1
+				repeat hiria_max-1
+					if hiria_status(cnt+1) = 0 {
+						next_hiria_id = cnt+1
+					}
+				loop
+			}
+			if next_hiria_id > -1 {
+				if hiria_status(next_hiria_id) != 0 {
+					next_hiria_id = -1
+					repeat hiria_max-1
+						if hiria_status(cnt+1) = 0 {
+							next_hiria_id = cnt+1
+						}
+					loop
+				}
+			}
+		}
+		
+		repeat hiria_max
+			if hiria_status(cnt) <= -1 {
+				if hiria_pos_x(cnt) > ginfo(12) or hiria_pos_y(cnt) < -141 {
+					hirias --
+					hiria_status(cnt) = 0
+					hiria_connection(cnt) = 0
+					hiria_pos_x(cnt) = -2000
+
+					if hirias = 0 {
+						game_over = 2
+					}
+				}
+			}
+		loop
+
+		// 障害物発生イベント
+		if rnd(150) = 0 and obstacles < 5 and obstacle_pos_x(next_obstacle_id) < 0 {
+			obstacles ++
+			obstacle_pos_x(next_obstacle_id) = -63
+			obstacle_pos_y(next_obstacle_id) = rnd(ginfo(13)-(200-50)) + 150
+			next_obstacle_id ++
+
+			if next_obstacle_id = obstacle_max {
+				next_obstacle_id = 0
+			}
+		}
+
+		repeat obstacle_max
+			if obstacle_pos_x(cnt) > ginfo(12) {
+				obstacles --
+				obstacle_pos_x(next_obstacle_id) = -1000
+			}
+		loop
+
+		// 背景
+		color 255, 255, 255 : boxf
+		color 63, 72, 204 : boxf 0, 0, ginfo(12), 200
+
+		// 当たり判定
+		// リア充に当たる -> 飛ばす
+		repeat hiria_max
+			j = cnt
+			repeat riajus
+				if riaju_attacked(cnt) = 1 {
+					continue
+				}
+				
+				if ((hiria_pos_x(j) >= riaju_pos_x(cnt) and hiria_pos_x(j) <= riaju_pos_x(cnt) + 110) and ((hiria_pos_y(j)+50 >= riaju_pos_y(cnt) and hiria_pos_y(j)+50 <= riaju_pos_y(cnt) + 160) or (hiria_pos_y(j)+100 >= riaju_pos_y(cnt) and hiria_pos_y(j)+100 <= riaju_pos_y(cnt) + 160))) {
+					point += 5
+					riaju_attacked(cnt) = 1
+					count_attack ++
+					break
+				}
+			loop
+		loop
+
+		// 非リアに当たる -> 仲間になる
+		repeat hiria_max
+			if hiria_status(cnt) <= 0 {
+				continue
+			}
+			
+			j = cnt
+			repeat hiria_max - 1
+				if hiria_status(cnt+1) = -1 and ((hiria_pos_x(j) >= hiria_pos_x(cnt+1) and hiria_pos_x(j) <= hiria_pos_x(cnt+1) + 80) and ((hiria_pos_y(j)+50 >= hiria_pos_y(cnt+1) and hiria_pos_y(j)+50 <= hiria_pos_y(cnt+1) + 141) or (hiria_pos_y(j)+100 >= hiria_pos_y(cnt+1) and hiria_pos_y(j)+100 <= hiria_pos_y(cnt+1) + 141))) {
+	
+					point += 10
+					hiria_status(cnt+1) = 2
+					
+					if next_connection > 0 {
+						next_connection_l --
+						next_connection = next_connection_l
+					} else {
+						next_connection_r ++
+						next_connection = next_connection_r
+					}
+	
+					hiria_connection(cnt+1) = next_connection
+
+					count_hiria ++
+
+					break
+				}
+			loop
+		loop
+
+		// 障害物に当たる -> 仲間が減る
+		repeat hiria_max
+			if hiria_status(cnt) <= 0 {
+				continue
+			}
+				
+			j = cnt
+			repeat obstacle_max			
+				new_next_connection = next_connection
+				if ((hiria_pos_x(j)+9 >= obstacle_pos_x(cnt) and hiria_pos_x(j)+9 <= obstacle_pos_x(cnt) + 63) and ((hiria_pos_y(j)+140 >= obstacle_pos_y(cnt) and hiria_pos_y(j)+140 <= obstacle_pos_y(cnt) + 141) or (hiria_pos_y(j)+141 >= obstacle_pos_y(cnt) and hiria_pos_y(j)+141 <= obstacle_pos_y(cnt) + 50))) {
+					if hiria_status(j) = 1 {
+						safe = 0
+						repeat hiria_max - 1
+							if hiria_status(cnt+1) = 2 {
+								safe = 1
+							}
+						loop
+
+						if safe = 1 {
+							break
+						}
+						
+						game_over = 1
+						hiria_status(j) = -2
+						hiria_connection(j) = 0
+
+						break
+					}
+
+					hiria_status(j) = -2
+
+					if hiria_connection(j) < 0 {
+						repeat hiria_max-1
+							if cnt+1 = j {
+								continue
+							}
+							
+							repeat hiria_max - 1
+								if hiria_status(cnt+1) = 2 {
+									if hiria_connection(cnt+1) < 0 and hiria_connection(cnt+1) < hiria_connection(j) {
+										hiria_connection(cnt+1) ++
+									}
+								}
+							loop
+						loop
+
+						next_connection_l ++
+					} else {
+						repeat hiria_max-1
+							if cnt+1 = j {
+								continue
+							}
+							
+							repeat hiria_max - 1
+								if hiria_status(cnt+1) = 2 {
+									if hiria_connection(cnt+1) > 0 and hiria_connection(cnt+1) > hiria_connection(j) {
+										hiria_connection(cnt+1) --
+									}
+								}
+							loop
+						loop
+
+						next_connection_r --
+					}
+
+					hiria_connection(j) = 0
+				}
+			loop
+		loop
+
+		// 非リア操作
+		if game_over = 0 {
+			getkey keyLeft, 37
+			if keyLeft = 1 and hiria_pos_x(0) >= 5 {
+				hiria_pos_x(0) -= 10
+			}
+	
+			getkey keyUp, 38
+			if keyUp = 1 and hiria_pos_y(0) >= 70 {
+				hiria_pos_y(0) -= 10
+			}
+	
+			getkey keyRight, 39
+			if keyRight = 1 and hiria_pos_x(0) <= ginfo(12)-80 {
+				hiria_pos_x(0) += 10
+			}
+	
+			getkey keyBottom, 40
+			if keyBottom = 1 and hiria_pos_y(0) <= ginfo(13)-150 {
+				hiria_pos_y(0) += 10
+			}
+		}
+
+		i = cnt
+		repeat hiria_max
+			if hiria_status(cnt) = 2 {
+				hiria_pos_x(cnt) = hiria_pos_x(0) + 70 * hiria_connection(cnt)
+				hiria_pos_y(cnt) = hiria_pos_y(0) + 13 * hiria_connection(cnt)
+			}
+			if hiria_status(cnt) = -2 {
+				hiria_pos_x(cnt) += 10+i/50
+				hiria_pos_y(cnt) -= 15+i/50
+			}
+		loop
+
+		// 木を表示	
+		i = cnt
+		repeat 2
+			tree_x(cnt) += 10+i/50
+			pos tree_x(cnt), 200-100 : gcopy 4, 0, 0, 64, 100
+		
+			if tree_x(cnt) >= ginfo(12) {
+				tree_x(cnt) = -64
+			}
+		loop
+
+		// リア充を表示
+		i = cnt
+		repeat riajus
+			pos riaju_pos_x(cnt), riaju_pos_y(cnt) : gcopy 3, 0, 0, 110, 150
+
+			if riaju_attacked(cnt) = 0 {
+				riaju_pos_x(cnt) += 30
+			} else {
+				riaju_pos_x(cnt) -= 10+i/50
+				riaju_pos_y(cnt) -= 15+i/50
+			}
+		loop
+
+		// 障害物を表示
+		i = cnt
+		repeat obstacle_max
+			pos obstacle_pos_x(cnt), obstacle_pos_y(cnt) : gcopy 6, 0, 0, 63, 50
+			obstacle_pos_x(cnt) += 10+i/50
+		loop
+
+		// ?孤独の非リア戦士?を表示
+		i = cnt
+		repeat hiria_max
+			if hiria_status(cnt) != 0 {
+				pos hiria_pos_x(cnt), hiria_pos_y(cnt)
+	
+				if hiria_status(cnt) = -1 {
+					gcopy 5, i\2*80, 0, 80, 150
+					hiria_pos_x(cnt) += 30
+				} else {
+					gcopy 2, i\2*80, 0, 80, 150
+				}
+
+				if hiria_status(cnt) = 1 {
+					pos hiria_pos_x(cnt)+40-8, hiria_pos_y(cnt)-16-5 : gcopy 7, 0, 0, 16, 16
+				}
+			}
+		loop
+
+		color 255, 255, 255
+		pos 10, 10 : mes "Point : " + point
+
+		redraw 1
+		if game_over = 2 {
+			break
+		}
+		
+		await 30
+	loop
+
+*result
+	color 0, 0, 0
+	sboxf 128, 0, 0, ginfo(12), ginfo(13)
+
+	color 255, 255, 255
+	font "Yu Gothic UI", 18
+	cmes "結果", 0, 100, ginfo(12), 120
+
+	wait 1000
+
+	font "Yu Gothic UI", 36
+	cmes ""+point+"点", 0, 200, ginfo(12), 240
+
+	font "Yu Gothic UI", 16
+	cmes "リア充を飛ばした回数 "+count_attack, 0, 280, ginfo(12), 300
+	cmes "非リアと手を繋いだ回数 "+count_hiria, 0, 300, ginfo(12), 320
+
+	wait 1000
+
+	objsize 100, 20
+	pos ginfo(12)/2-50, 350 : button "もう一度", *game
+	pos ginfo(12)/2-50, 380 : button "タイトル画面へ", *title_menu
+
+	stop
